@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TikTok Stats</title>
+<style>
+  :root {
+    --bg: #0f1115; --card: #181b22; --line: #262a33; --text: #e8eaee;
+    --muted: #8b92a1; --accent: #25f4ee; --accent2: #fe2c55;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f5f7; --card: #fff; --line: #e3e5ea; --text: #15171c; --muted: #6a7282; --accent: #0a9d98; --accent2: #e11d48; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h1 span { background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+  form { display: flex; gap: 8px; flex-wrap: wrap; }
+  input { flex: 1 1 220px; padding: 11px 13px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
+  input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button { padding: 11px 18px; border: 0; border-radius: 10px; background: var(--accent2); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .6; cursor: wait; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  .tab { background: transparent; color: var(--muted); border: 1px solid var(--line); padding: 7px 14px; border-radius: 999px; font-weight: 500; }
+  .tab.on { color: var(--text); border-color: var(--accent); }
+  .err { color: var(--accent2); margin-top: 10px; min-height: 1em; }
+  .head { display: flex; gap: 14px; align-items: center; margin-bottom: 14px; }
+  .avatar { width: 52px; height: 52px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent2)); display: grid; place-items: center; font-weight: 700; font-size: 20px; color: #fff; flex: none; }
+  .name { font-weight: 700; font-size: 17px; }
+  .user { color: var(--muted); }
+  .bio { color: var(--muted); margin: 0 0 14px; white-space: pre-wrap; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+  .stat { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+  .stat b { display: block; font-size: 22px; }
+  .stat small { color: var(--muted); }
+  .bar { height: 8px; background: var(--bg); border-radius: 99px; overflow: hidden; margin-top: 12px; border: 1px solid var(--line); }
+  .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+  .tag { font-size: 12px; color: var(--accent); border: 1px solid var(--accent); border-radius: 99px; padding: 1px 8px; margin-left: 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: right; padding: 9px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 500; font-size: 13px; cursor: pointer; user-select: none; }
+  .scroll { overflow-x: auto; }
+  h2 { font-size: 15px; margin: 0 0 10px; color: var(--muted); font-weight: 600; }
+  .actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+  .ghost { background: transparent; border: 1px solid var(--line); color: var(--text); padding: 7px 12px; font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><span>TikTok</span> Stats</h1>
+  <p class="sub">Datos públicos de perfiles y videos.</p>
+
+  <div class="panel">
+    <div class="tabs">
+      <button class="tab on" data-mode="profile" type="button">Perfil</button>
+      <button class="tab" data-mode="video" type="button">Video</button>
+    </div>
+    <form id="form">
+      <input id="q" placeholder="@usuario" autocomplete="off" required>
+      <button id="go" type="submit">Buscar</button>
+    </form>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div id="results"></div>
+
+  <div class="panel" id="cmp" hidden>
+    <h2>Comparar perfiles (clic en una columna para ordenar)</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr>
+          <th data-k="usuario">Usuario</th><th data-k="seguidores">Seguidores</th>
+          <th data-k="seguidos">Seguidos</th><th data-k="me_gustas_totales">Me gustas</th>
+          <th data-k="videos">Videos</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div class="actions"><button class="ghost" id="csv" type="button">Descargar CSV</button></div>
+  </div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const fmt = (n) => (n ?? 0).toLocaleString("es");
+const compact = (n) => new Intl.NumberFormat("es", { notation: "compact", maximumFractionDigits: 1 }).format(n ?? 0);
+let mode = "profile";
+const profiles = [];
+let sortKey = "seguidores", sortDir = -1;
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+function stat(label, value) {
+  const s = el("div", "stat");
+  s.append(el("b", "", compact(value)), el("small", "", label));
+  s.title = fmt(value);
+  return s;
+}
+
+document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => {
+  document.querySelectorAll(".tab").forEach((x) => x.classList.remove("on"));
+  t.classList.add("on");
+  mode = t.dataset.mode;
+  $("#q").placeholder = mode === "profile" ? "@usuario" : "https://www.tiktok.com/@usuario/video/…";
+  $("#q").value = "";
+}));
+
+function profileCard(p) {
+  const c = el("div", "panel");
+  const head = el("div", "head");
+  head.append(el("div", "avatar", (p.nombre || p.usuario || "?")[0].toUpperCase()));
+  const who = el("div");
+  const n = el("div", "name", p.nombre || "");
+  if (p.verificado) n.append(el("span", "tag", "verificado"));
+  who.append(n, el("div", "user", "@" + p.usuario));
+  head.append(who);
+  c.append(head);
+  if (p.bio) c.append(el("p", "bio", p.bio));
+  const g = el("div", "grid");
+  g.append(stat("Seguidores", p.seguidores), stat("Seguidos", p.seguidos),
+           stat("Me gustas totales", p.me_gustas_totales), stat("Videos", p.videos));
+  c.append(g);
+  return c;
+}
+
+function videoCard(v) {
+  const c = el("div", "panel");
+  const head = el("div", "head");
+  head.append(el("div", "avatar", (v.nombre || v.usuario || "?")[0].toUpperCase()));
+  const who = el("div");
+  who.append(el("div", "name", v.nombre || ""), el("div", "user", "@" + v.usuario));
+  head.append(who);
+  c.append(head);
+  if (v.descripcion) c.append(el("p", "bio", v.descripcion));
+  const g = el("div", "grid");
+  g.append(stat("Me gustas", v.me_gustas), stat("Comentarios", v.comentarios),
+           stat("Compartidos", v.compartidos), stat("Guardados", v.guardados),
+           stat("Reproducciones", v.reproducciones), stat("Interacciones", v.interacciones));
+  c.append(g);
+  const rate = v["tasa_interaccion_%"];
+  c.append(el("div", "", ""));
+  const label = el("small", "user", "Tasa de interacción: " + rate + "%");
+  label.style.display = "block"; label.style.marginTop = "12px";
+  const bar = el("div", "bar"), fill = el("i");
+  fill.style.width = Math.min(rate * 5, 100) + "%";
+  bar.append(fill);
+  c.append(label, bar);
+  return c;
+}
+
+function renderTable() {
+  $("#cmp").hidden = profiles.length < 1;
+  const rows = [...profiles].sort((a, b) => {
+    const x = a[sortKey], y = b[sortKey];
+    return (typeof x === "string" ? x.localeCompare(y) : x - y) * sortDir;
+  });
+  const tb = $("#tbody");
+  tb.replaceChildren();
+  rows.forEach((p) => {
+    const tr = el("tr");
+    tr.append(el("td", "", "@" + p.usuario), el("td", "", fmt(p.seguidores)),
+              el("td", "", fmt(p.seguidos)), el("td", "", fmt(p.me_gustas_totales)), el("td", "", fmt(p.videos)));
+    tb.append(tr);
+  });
+}
+
+document.querySelectorAll("th").forEach((th) => th.addEventListener("click", () => {
+  const k = th.dataset.k;
+  sortDir = sortKey === k ? -sortDir : -1;
+  sortKey = k;
+  renderTable();
+}));
+
+$("#csv").addEventListener("click", () => {
+  const cols = ["nombre", "usuario", "seguidores", "seguidos", "me_gustas_totales", "videos"];
+  const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const csv = [cols.join(","), ...profiles.map((p) => cols.map((c) => esc(p[c])).join(","))].join("\n");
+  const a = el("a");
+  a.href = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv" }));
+  a.download = "perfiles.csv";
+  a.click();
+});
+
+$("#form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const q = $("#q").value.trim();
+  const btn = $("#go");
+  $("#err").textContent = "";
+  btn.disabled = true; btn.textContent = "Buscando…";
+  try {
+    const url = mode === "profile"
+      ? "/api/profile?u=" + encodeURIComponent(q)
+      : "/api/video?url=" + encodeURIComponent(q);
+    const r = await fetch(url);
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Error");
+    if (mode === "profile") {
+      const i = profiles.findIndex((p) => p.usuario === data.usuario);
+      if (i >= 0) profiles.splice(i, 1);
+      profiles.push(data);
+      renderTable();
+    }
+    $("#results").prepend(mode === "profile" ? profileCard(data) : videoCard(data));
+  } catch (err) {
+    $("#err").textContent = err.message;
+  } finally {
+    btn.disabled = false; btn.textContent = "Buscar";
+  }
+});
+</script>
+</body>
+</html>
