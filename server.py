@@ -1,9 +1,3 @@
-"""
-Servidor local para el panel (index.html). Usa tiktok_scraper.py.
-
-    python server.py
-    -> abre http://127.0.0.1:8000
-"""
 
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer

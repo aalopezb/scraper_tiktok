@@ -1,19 +1,3 @@
-"""
-Scraper de datos PUBLICOS de TikTok (perfil y videos).
-
-Uso:
-    pip install requests
-    python tiktok_scraper.py khaby.lame
-    python tiktok_scraper.py usuario1 usuario2 --csv perfiles.csv
-    python tiktok_scraper.py --video https://www.tiktok.com/@usuario/video/1234567890
-
-Datos del perfil: nombre, usuario, seguidores, seguidos, me gustas totales, videos.
-Datos de un video: me gustas, comentarios, compartidos, guardados, reproducciones
-y tasa de interaccion.
-
-Nota: TikTok cambia su HTML con frecuencia y bloquea peticiones masivas. Si deja
-de funcionar, revisa la estructura del JSON o usa la API oficial / Playwright.
-"""
 
 import argparse
 import csv
@@ -80,7 +64,7 @@ def get_page_data(url: str) -> dict:
     if data:
         return data
 
-    # Respaldo con navegador real si esta instalado Playwright
+    
     try:
         html = _fetch_with_browser(url)
         data = _parse_html(html)
