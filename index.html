@@ -47,6 +47,15 @@
   .scroll { overflow-x: auto; }
   h2 { font-size: 15px; margin: 0 0 10px; color: var(--muted); font-weight: 600; }
   .actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+  .note { color: var(--muted); margin-top: 10px; }
+  details { border-top: 1px solid var(--line); padding: 10px 0; }
+  summary { cursor: pointer; }
+  .cm { list-style: none; padding: 0; margin: 8px 0 0; }
+  .cm li { padding: 6px 0; border-bottom: 1px dashed var(--line); word-break: break-word; }
+  .legend { display: flex; gap: 16px; color: var(--muted); font-size: 13px; margin: 4px 0 12px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
+  .alerts { margin: 10px 0; padding-left: 18px; color: var(--accent2); }
+  .fine { color: var(--muted); font-size: 12px; margin-top: 12px; }
   .ghost { background: transparent; border: 1px solid var(--line); color: var(--text); padding: 7px 12px; font-weight: 500; }
 </style>
 </head>
@@ -59,12 +68,14 @@
     <div class="tabs">
       <button class="tab on" data-mode="profile" type="button">Perfil</button>
       <button class="tab" data-mode="video" type="button">Video</button>
+      <button class="tab" data-mode="analysis" type="button">Análisis (5 videos)</button>
     </div>
     <form id="form">
       <input id="q" placeholder="@usuario" autocomplete="off" required>
       <button id="go" type="submit">Buscar</button>
     </form>
     <div class="err" id="err"></div>
+    <div class="note" id="status"></div>
   </div>
 
   <div id="results"></div>
@@ -110,7 +121,8 @@ document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () 
   document.querySelectorAll(".tab").forEach((x) => x.classList.remove("on"));
   t.classList.add("on");
   mode = t.dataset.mode;
-  $("#q").placeholder = mode === "profile" ? "@usuario" : "https://www.tiktok.com/@usuario/video/…";
+  $("#q").placeholder = mode === "video" ? "https://www.tiktok.com/@usuario/video/…" : "@usuario";
+  $("#go").textContent = mode === "analysis" ? "Analizar" : "Buscar";
   $("#q").value = "";
 }));
 
@@ -157,6 +169,129 @@ function videoCard(v) {
   return c;
 }
 
+const scoreColor = (s) => (s >= 70 ? "var(--accent)" : s >= 45 ? "#d99a00" : "var(--accent2)");
+const SVGNS = "http://www.w3.org/2000/svg";
+
+function svg(tag, attrs = {}, text) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function barChart(videos) {
+  const W = 640, H = 300, L = 36, B = 40, T = 14, R = 8;
+  const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": "Valor y veracidad por video" });
+  const ph = H - T - B, pw = W - L - R;
+  [0, 25, 50, 75, 100].forEach((g) => {
+    const y = T + ph - (g / 100) * ph;
+    const line = svg("line", { x1: L, x2: W - R, y1: y, y2: y });
+    line.style.stroke = "var(--line)";
+    const lab = svg("text", { x: L - 6, y: y + 4, "text-anchor": "end", "font-size": 11 }, g);
+    lab.style.fill = "var(--muted)";
+    s.append(line, lab);
+  });
+  const slot = pw / videos.length, bw = Math.min(34, slot / 3);
+  videos.forEach((v, i) => {
+    const cx = L + slot * i + slot / 2;
+    [["valor", "--accent", -bw - 2], ["veracidad", "--accent2", 2]].forEach(([key, color, dx]) => {
+      const val = v[key], h = (val / 100) * ph;
+      const r = svg("rect", { x: cx + dx, y: T + ph - h, width: bw, height: Math.max(h, 1), rx: 4 });
+      r.style.fill = `var(${color})`;
+      r.append(svg("title", {}, `${key}: ${val}`));
+      const t = svg("text", { x: cx + dx + bw / 2, y: T + ph - h - 4, "text-anchor": "middle", "font-size": 11 }, Math.round(val));
+      t.style.fill = "var(--text)";
+      s.append(r, t);
+    });
+    const d = svg("text", { x: cx, y: H - B + 18, "text-anchor": "middle", "font-size": 12 }, (v.fecha || "").slice(5, 10));
+    d.style.fill = "var(--text)";
+    s.append(d);
+  });
+  return s;
+}
+
+function scoreBox(title, score, label) {
+  const b = el("div", "stat");
+  const big = el("b", "", String(Math.round(score)));
+  big.style.color = scoreColor(score);
+  b.append(big, el("small", "", `${title} · ${label}`));
+  const bar = el("div", "bar"), fill = el("i");
+  fill.style.width = score + "%";
+  bar.append(fill);
+  b.append(bar);
+  return b;
+}
+
+function videoDetails(v, i) {
+  const d = document.createElement("details");
+  const sm = document.createElement("summary");
+  const desc = (v.descripcion || "(sin descripción)").slice(0, 60);
+  sm.textContent = `V${i + 1} · ${(v.fecha || "").slice(0, 10)} · ${desc} — Valor ${Math.round(v.valor)} / Veracidad ${Math.round(v.veracidad)}`;
+  d.append(sm);
+  const g = el("div", "grid");
+  g.style.marginTop = "10px";
+  g.append(stat("Reproducciones", v.reproducciones), stat("Me gustas", v.me_gustas),
+           stat("Comentarios", v.comentarios), stat("Compartidos", v.compartidos), stat("Guardados", v.guardados));
+  const er = el("div", "stat");
+  er.append(el("b", "", v.metricas.tasa_interaccion + "%"), el("small", "", "Tasa de interacción"));
+  g.append(er);
+  d.append(g);
+  if (v.alertas.length) {
+    const ul = el("ul", "alerts");
+    v.alertas.forEach((a) => ul.append(el("li", "", a)));
+    d.append(ul);
+  }
+  if (v.comentarios_muestra.length) {
+    d.append(el("small", "user", "Muestra de comentarios"));
+    const ul = el("ul", "cm");
+    v.comentarios_muestra.forEach((c) => ul.append(el("li", "", `@${c.usuario}: ${c.texto}  (♥ ${c.likes})`)));
+    d.append(ul);
+  } else {
+    d.append(el("small", "user", "Sin comentarios en la muestra."));
+  }
+  const a = el("a", "", "Abrir video en TikTok");
+  a.href = v.url; a.target = "_blank"; a.rel = "noopener";
+  a.style.cssText = "display:block;margin-top:8px;color:var(--accent)";
+  d.append(a);
+  return d;
+}
+
+function analysisCard(d) {
+  const p = d.perfil || {}, acc = d.cuenta;
+  const c = el("div", "panel");
+  const head = el("div", "head");
+  head.append(el("div", "avatar", (p.nombre || p.usuario || "?")[0].toUpperCase()));
+  const who = el("div");
+  who.append(el("div", "name", p.nombre || p.usuario || ""), el("div", "user", "@" + (p.usuario || "")));
+  head.append(who);
+  c.append(head);
+
+  const g = el("div", "grid");
+  g.append(scoreBox("Valor", acc.valor, acc.etiqueta_valor), scoreBox("Veracidad", acc.veracidad, acc.etiqueta_veracidad),
+           stat("Seguidores", p.seguidores), stat("Videos analizados", acc.videos_analizados));
+  c.append(g);
+
+  if (acc.alertas.length) {
+    const ul = el("ul", "alerts");
+    acc.alertas.forEach((a) => ul.append(el("li", "", a)));
+    c.append(ul);
+  }
+
+  const h = el("h2", "", "Valor y veracidad por video (de más antiguo a más reciente)");
+  h.style.marginTop = "18px";
+  c.append(h, barChart([...d.videos].reverse()));
+  const lg = el("div", "legend");
+  lg.innerHTML = '<span><i style="background:var(--accent)"></i>Valor</span><span><i style="background:var(--accent2)"></i>Veracidad</span>';
+  c.append(lg);
+
+  d.videos.forEach((v, i) => c.append(videoDetails(v, i)));
+  c.append(el("p", "fine",
+    "Valor = qué tan bien rinde el contenido (interacción, alcance, conversación, sentimiento). " +
+    "Veracidad = qué tan orgánica parece la interacción (proporciones y calidad de comentarios). " +
+    "Son heurísticas sobre una muestra pequeña: indicios, no pruebas."));
+  return c;
+}
+
 function renderTable() {
   $("#cmp").hidden = profiles.length < 1;
   const rows = [...profiles].sort((a, b) => {
@@ -196,7 +331,17 @@ $("#form").addEventListener("submit", async (e) => {
   const btn = $("#go");
   $("#err").textContent = "";
   btn.disabled = true; btn.textContent = "Buscando…";
+  $("#status").textContent = mode === "analysis"
+    ? "Analizando… se abrirá una ventana de navegador y puede tardar 1–2 minutos. Si aparece un captcha, resuélvelo ahí."
+    : "";
   try {
+    if (mode === "analysis") {
+      const ra = await fetch("/api/analysis?n=5&c=10&u=" + encodeURIComponent(q));
+      const da = await ra.json();
+      if (!ra.ok) throw new Error(da.error || "Error");
+      $("#results").prepend(analysisCard(da));
+      return;
+    }
     const url = mode === "profile"
       ? "/api/profile?u=" + encodeURIComponent(q)
       : "/api/video?url=" + encodeURIComponent(q);
@@ -213,7 +358,9 @@ $("#form").addEventListener("submit", async (e) => {
   } catch (err) {
     $("#err").textContent = err.message;
   } finally {
-    btn.disabled = false; btn.textContent = "Buscar";
+    btn.disabled = false;
+    btn.textContent = mode === "analysis" ? "Analizar" : "Buscar";
+    $("#status").textContent = "";
   }
 });
 </script>
